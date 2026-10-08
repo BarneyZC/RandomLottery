@@ -1,0 +1,60 @@
+name: 编译 APK
+
+# 触发条件：往 main / master 分支推送代码时自动编译
+# 也可以到仓库的 Actions 页面点「Run workflow」手动触发
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 把仓库里的代码取到编译机上
+      - name: 取出代码
+        uses: actions/checkout@v4
+
+      # 2. 安装 JDK 17（本项目用的编译工具要求这个版本）
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 3. 缓存依赖，第二次编译会快很多
+      - name: 缓存 Gradle 依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # 4. 给编译脚本加执行权限（Linux 上必须做这一步）
+      - name: 给 gradlew 加执行权限
+        run: chmod +x ./gradlew
+
+      # 5. 真正开始编译，产出 debug 版 APK
+      - name: 编译 APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      # 6. 把编译出来的 APK 存为产物，供下载
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 随机点名抽奖器-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # 7. 如果编译失败，把日志打出来方便排查
+      - name: 编译失败时输出日志
+        if: failure()
+        run: |
+          echo "===== 编译失败，以下是常见原因 ====="
+          echo "1. 检查 app/build.gradle.kts 里的 SDK 版本"
+          echo "2. 检查 res/ 下的 XML 有没有写错"
+          echo "3. 检查 Kotlin 代码有没有语法错误"
+          ls -la app/build/outputs/ 2>/dev/null || true
